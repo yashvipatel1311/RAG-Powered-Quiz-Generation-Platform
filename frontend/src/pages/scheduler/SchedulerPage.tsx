@@ -5,14 +5,24 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
-import type { CalendarEvent } from '@/lib/types'
-import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
+import type { CalendarEvent, User } from '@/lib/types'
+import { ChevronLeft, ChevronRight, Plus, X, Trash2 } from 'lucide-react'
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameMonth, isToday, isSameDay,
   addMonths, subMonths,
 } from 'date-fns'
 import toast from 'react-hot-toast'
+
+// Event colors matching backend EVENT_TYPE_COLORS
+const EVENT_COLORS: Record<string, string> = {
+  lecture: '#FBC02D',       // Yellow
+  meeting: '#4285F4',      // Blue
+  exam: '#DB4437',         // Red
+  assignment_due: '#F4B400', // Yellow
+  holiday: '#0F9D58',      // Green
+  other: '#9E9E9E',        // Grey
+}
 
 export default function SchedulerPage() {
   const { user } = useAuth()
@@ -24,16 +34,21 @@ export default function SchedulerPage() {
 
   // Form state
   const [formTitle, setFormTitle] = useState('')
-  const [formType, setFormType] = useState('lecture')
+  const [formType, setFormType] = useState(user?.role === 'student' ? 'meeting' : 'lecture')
   const [formStart, setFormStart] = useState('')
   const [formEnd, setFormEnd] = useState('')
+  const [formDate, setFormDate] = useState('') // Date-only for holidays
   const [formDesc, setFormDesc] = useState('')
   const [formCourseId, setFormCourseId] = useState('')
+  const [formPersonId, setFormPersonId] = useState('')
+  const [formSemester, setFormSemester] = useState('everyone')
   const [courses, setCourses] = useState<any[]>([])
+  const [staffList, setStaffList] = useState<User[]>([])
 
   useEffect(() => {
     loadEvents()
-    api.get('/courses/').then(r => setCourses(r.data || []))
+    api.get('/courses/').then(r => setCourses(r.data || [])).catch(() => {})
+    api.get('/users/staff').then(r => setStaffList(r.data || [])).catch(() => {})
   }, [currentMonth])
 
   const loadEvents = async () => {
@@ -48,20 +63,83 @@ export default function SchedulerPage() {
   }
 
   const createEvent = async () => {
-    if (!formTitle || !formStart || !formEnd) { toast.error('Fill required fields'); return }
+    if (!formTitle) { toast.error('Title is required'); return }
+
+    let startAt: string
+    let endAt: string
+
+    if (formType === 'holiday') {
+      if (!formDate) { toast.error('Date is required'); return }
+      startAt = new Date(formDate + 'T00:00:00').toISOString()
+      endAt = new Date(formDate + 'T23:59:59').toISOString()
+    } else {
+      if (!formStart || !formEnd) { toast.error('Start and end time required'); return }
+      startAt = new Date(formStart).toISOString()
+      endAt = new Date(formEnd).toISOString()
+    }
+
     try {
-      await api.post('/scheduler/events', {
+      const payload: any = {
         title: formTitle, event_type: formType,
-        start_at: new Date(formStart).toISOString(),
-        end_at: new Date(formEnd).toISOString(),
-        course_id: formCourseId || null,
+        start_at: startAt,
+        end_at: endAt,
         description: formDesc || null,
-      })
+      }
+
+      if (formType === 'holiday') {
+        payload.semester = formSemester
+        payload.description = formSemester === 'everyone'
+          ? `Holiday for entire department${formDesc ? ' - ' + formDesc : ''}`
+          : `Holiday for Semester ${formSemester}${formDesc ? ' - ' + formDesc : ''}`
+        payload.course_id = null
+      } else if (formType === 'meeting' && formPersonId) {
+        const person = staffList.find(s => s.id === formPersonId)
+        if (person) {
+          payload.description = `Meeting with ${person.full_name}${formDesc ? ' - ' + formDesc : ''}`
+        }
+        payload.course_id = null
+      } else if (formType === 'lecture' && formPersonId) {
+        const person = staffList.find(s => s.id === formPersonId)
+        if (person) {
+          payload.description = `Lecture by ${person.full_name}${formDesc ? ' - ' + formDesc : ''}`
+        }
+        payload.course_id = formCourseId || null
+      } else {
+        payload.course_id = formCourseId || null
+      }
+
+      await api.post('/scheduler/events', payload)
       toast.success('Event created')
       setShowCreate(false)
-      setFormTitle(''); setFormType('lecture'); setFormStart(''); setFormEnd(''); setFormDesc(''); setFormCourseId('')
+      resetForm()
       loadEvents()
-    } catch { toast.error('Failed to create event') }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Failed to create event'
+      toast.error(msg)
+    }
+  }
+
+  const deleteEvent = async (eventId: string) => {
+    try {
+      await api.delete(`/scheduler/events/${eventId}`)
+      toast.success('Event deleted')
+      setSelectedEvent(null)
+      loadEvents()
+    } catch {
+      toast.error('Failed to delete event')
+    }
+  }
+
+  const resetForm = () => {
+    setFormTitle('')
+    setFormType(user?.role === 'student' ? 'meeting' : 'lecture')
+    setFormStart('')
+    setFormEnd('')
+    setFormDate('')
+    setFormDesc('')
+    setFormCourseId('')
+    setFormPersonId('')
+    setFormSemester('everyone')
   }
 
   // Calendar grid
@@ -74,17 +152,44 @@ export default function SchedulerPage() {
   const getEventsForDay = (day: Date) =>
     events.filter(e => isSameDay(new Date(e.start_at), day))
 
-  const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
+  const getEventColor = (eventType: string) => EVENT_COLORS[eventType] || '#9E9E9E'
+
+  // Event type options based on role
+  const getEventTypeOptions = () => {
+    if (user?.role === 'student') {
+      return [
+        { value: 'meeting', label: 'Meeting' },
+        { value: 'other', label: 'Other' },
+      ]
+    }
+    return [
+      { value: 'lecture', label: 'Lecture' },
+      { value: 'meeting', label: 'Meeting' },
+      { value: 'exam', label: 'Exam' },
+      { value: 'holiday', label: 'Holiday' },
+      { value: 'other', label: 'Other' },
+    ]
+  }
+
+  const canDelete = user?.role === 'admin' || user?.role === 'teacher'
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">Scheduler</h1>
-        {isTeacher && (
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> New Event
-          </button>
-        )}
+        <button className="btn btn-primary" onClick={() => { resetForm(); setShowCreate(true) }}>
+          <Plus size={16} /> New Event
+        </button>
+      </div>
+
+      {/* Color Legend */}
+      <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+        {Object.entries(EVENT_COLORS).filter(([k]) => k !== 'assignment_due').map(([type, color]) => (
+          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 3, background: color }} />
+            <span style={{ textTransform: 'capitalize' }}>{type}</span>
+          </div>
+        ))}
       </div>
 
       {/* Month Navigation */}
@@ -116,13 +221,16 @@ export default function SchedulerPage() {
               <div className={isToday(day) ? 'day-number' : ''} style={{ fontSize: 13, marginBottom: 4, fontWeight: isToday(day) ? 600 : 400 }}>
                 {format(day, 'd')}
               </div>
-              {dayEvents.slice(0, 3).map(ev => (
-                <div key={ev.id} className="event-chip"
-                  style={{ background: ev.color + '22', color: ev.color, borderLeft: `3px solid ${ev.color}` }}
-                  onClick={() => setSelectedEvent(ev)} title={ev.title}>
-                  {ev.title}
-                </div>
-              ))}
+              {dayEvents.slice(0, 3).map(ev => {
+                const color = getEventColor(ev.event_type)
+                return (
+                  <div key={ev.id} className="event-chip"
+                    style={{ background: color + '22', color: color, borderLeft: `3px solid ${color}` }}
+                    onClick={() => setSelectedEvent(ev)} title={ev.title}>
+                    {ev.title}
+                  </div>
+                )
+              })}
               {dayEvents.length > 3 && (
                 <div className="text-muted" style={{ fontSize: 10, padding: '0 4px' }}>
                   +{dayEvents.length - 3} more
@@ -141,19 +249,32 @@ export default function SchedulerPage() {
           <div className="slideover" style={{ padding: 24 }}>
             <div className="flex-between" style={{ marginBottom: 20 }}>
               <h3>{selectedEvent.title}</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setSelectedEvent(null)}>
-                <X size={20} />
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {canDelete && (
+                  <button className="btn btn-ghost btn-icon" onClick={() => deleteEvent(selectedEvent.id)}
+                    title="Delete event" style={{ color: '#DB4437' }}>
+                    <Trash2 size={18} />
+                  </button>
+                )}
+                <button className="btn btn-ghost btn-icon" onClick={() => setSelectedEvent(null)}>
+                  <X size={20} />
+                </button>
+              </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <span className="text-muted text-small">Type</span>
-                <p className="font-medium" style={{ textTransform: 'capitalize' }}>{selectedEvent.event_type.replace('_', ' ')}</p>
+                <p className="font-medium" style={{ textTransform: 'capitalize', color: getEventColor(selectedEvent.event_type) }}>
+                  {selectedEvent.event_type.replace('_', ' ')}
+                </p>
               </div>
               <div>
                 <span className="text-muted text-small">When</span>
                 <p className="font-medium">
-                  {format(new Date(selectedEvent.start_at), 'PPp')} — {format(new Date(selectedEvent.end_at), 'p')}
+                  {selectedEvent.event_type === 'holiday'
+                    ? format(new Date(selectedEvent.start_at), 'PPP') + ' (Full Day)'
+                    : `${format(new Date(selectedEvent.start_at), 'PPp')} — ${format(new Date(selectedEvent.end_at), 'p')}`
+                  }
                 </p>
               </div>
               {selectedEvent.course_name && (
@@ -200,30 +321,74 @@ export default function SchedulerPage() {
                 <div className="input-group">
                   <label className="input-label">Type</label>
                   <select className="input" value={formType} onChange={e => setFormType(e.target.value)}>
-                    <option value="lecture">Lecture</option>
-                    <option value="meeting">Meeting</option>
-                    <option value="exam">Exam</option>
-                    <option value="other">Other</option>
+                    {getEventTypeOptions().map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="input-group">
-                  <label className="input-label">Course</label>
-                  <select className="input" value={formCourseId} onChange={e => setFormCourseId(e.target.value)}>
-                    <option value="">None (Personal)</option>
-                    {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
+                  {formType === 'meeting' || formType === 'lecture' ? (
+                    <>
+                      <label className="input-label">{formType === 'lecture' ? 'Teacher' : 'Person'}</label>
+                      <select className="input" value={formPersonId} onChange={e => setFormPersonId(e.target.value)}>
+                        <option value="">Select {formType === 'lecture' ? 'teacher' : 'person'}...</option>
+                        {staffList.filter(s => formType === 'meeting' || s.role === 'teacher').map(s => (
+                          <option key={s.id} value={s.id}>
+                            {s.full_name} ({s.role})
+                          </option>
+                        ))}
+                      </select>
+                      {formType === 'lecture' && (
+                        <div style={{ marginTop: 12 }}>
+                          <label className="input-label">Course</label>
+                          <select className="input" value={formCourseId} onChange={e => setFormCourseId(e.target.value)}>
+                            <option value="">None (Personal)</option>
+                            {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </>
+                  ) : formType === 'holiday' ? (
+                    <>
+                      <label className="input-label">Applies To</label>
+                      <select className="input" value={formSemester} onChange={e => setFormSemester(e.target.value)}>
+                        <option value="everyone">Everyone (Whole Department)</option>
+                        {Array.from({ length: 10 }, (_, i) => (
+                          <option key={i + 1} value={String(i + 1)}>Semester {i + 1}</option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <label className="input-label">Course</label>
+                      <select className="input" value={formCourseId} onChange={e => setFormCourseId(e.target.value)}>
+                        <option value="">None (Personal)</option>
+                        {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="grid-2">
+
+              {/* Date/Time inputs — Holiday gets date-only, others get datetime */}
+              {formType === 'holiday' ? (
                 <div className="input-group">
-                  <label className="input-label">Start *</label>
-                  <input className="input" type="datetime-local" value={formStart} onChange={e => setFormStart(e.target.value)} />
+                  <label className="input-label">Date *</label>
+                  <input className="input" type="date" value={formDate} onChange={e => setFormDate(e.target.value)} />
                 </div>
-                <div className="input-group">
-                  <label className="input-label">End *</label>
-                  <input className="input" type="datetime-local" value={formEnd} onChange={e => setFormEnd(e.target.value)} />
+              ) : (
+                <div className="grid-2">
+                  <div className="input-group">
+                    <label className="input-label">Start *</label>
+                    <input className="input" type="datetime-local" value={formStart} onChange={e => setFormStart(e.target.value)} />
+                  </div>
+                  <div className="input-group">
+                    <label className="input-label">End *</label>
+                    <input className="input" type="datetime-local" value={formEnd} onChange={e => setFormEnd(e.target.value)} />
+                  </div>
                 </div>
-              </div>
+              )}
+
               <div className="input-group">
                 <label className="input-label">Description</label>
                 <textarea className="input" value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2} />

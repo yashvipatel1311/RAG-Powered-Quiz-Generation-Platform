@@ -1,6 +1,6 @@
 // ============================================================
 // Academix AI — Manage Users Page (Admin)
-// User list with search, role filter, and create user modal
+// User list with search and 3 role tabs (Admin, Teachers, Students)
 // ============================================================
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
@@ -8,11 +8,13 @@ import type { User } from '@/lib/types'
 import { Users, Plus, Search, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
+type RoleTab = 'admin' | 'teacher' | 'student'
+
 export default function ManageUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [roleFilter, setRoleFilter] = useState('')
+  const [activeTab, setActiveTab] = useState<RoleTab>('admin')
   const [showCreate, setShowCreate] = useState(false)
 
   const [formEmail, setFormEmail] = useState('')
@@ -21,13 +23,12 @@ export default function ManageUsersPage() {
   const [formRole, setFormRole] = useState('student')
   const [formDept, setFormDept] = useState('')
 
-  useEffect(() => { loadUsers() }, [roleFilter, search])
+  useEffect(() => { loadUsers() }, [activeTab, search])
 
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const params: any = {}
-      if (roleFilter) params.role = roleFilter
+      const params: any = { role: activeTab }
       if (search) params.search = search
       const { data } = await api.get('/users/', { params })
       setUsers(data || [])
@@ -62,6 +63,11 @@ export default function ManageUsersPage() {
   }
 
   const roleColors: Record<string, string> = { admin: 'badge-purple', teacher: 'badge-blue', student: 'badge-green' }
+  const tabCounts: Record<RoleTab, string> = {
+    admin: 'Admins',
+    teacher: 'Teachers',
+    student: 'Students',
+  }
 
   return (
     <div>
@@ -72,20 +78,25 @@ export default function ManageUsersPage() {
         </button>
       </div>
 
-      {/* Search & Filter */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1, position: 'relative' }}>
+      {/* Search */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-3)' }} />
           <input className="input" placeholder="Search by name or email..."
             value={search} onChange={e => setSearch(e.target.value)}
             style={{ paddingLeft: 36 }} />
         </div>
-        <select className="input" style={{ width: 160 }} value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
-          <option value="">All Roles</option>
-          <option value="admin">Admin</option>
-          <option value="teacher">Teacher</option>
-          <option value="student">Student</option>
-        </select>
+      </div>
+
+      {/* 3 Role Tabs */}
+      <div className="tabs" style={{ marginBottom: 20 }}>
+        {(['admin', 'teacher', 'student'] as RoleTab[]).map(role => (
+          <div key={role}
+            className={`tab ${activeTab === role ? 'active' : ''}`}
+            onClick={() => setActiveTab(role)}>
+            {tabCounts[role]}
+          </div>
+        ))}
       </div>
 
       {/* Users Table */}
@@ -104,7 +115,7 @@ export default function ManageUsersPage() {
             {loading ? (
               <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center' }} className="text-muted">Loading...</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center' }} className="text-muted">No users found</td></tr>
+              <tr><td colSpan={5} style={{ padding: 40, textAlign: 'center' }} className="text-muted">No {tabCounts[activeTab].toLowerCase()} found</td></tr>
             ) : users.map(u => (
               <tr key={u.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <td style={{ padding: '12px 16px' }}>

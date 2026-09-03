@@ -1,12 +1,12 @@
 // ============================================================
 // Academix AI — Notice Board Page
-// Filterable notification feed
+// Filterable notification feed visible to all roles
 // ============================================================
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import type { Notice } from '@/lib/types'
-import { Bell, BookOpen, ClipboardList, Calendar, Award, AlertCircle, Filter } from 'lucide-react'
+import { Bell, ClipboardList, Calendar, Award, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 
@@ -15,7 +15,6 @@ const typeIcons: Record<string, any> = {
   assignment: ClipboardList,
   grade: Award,
   event: Calendar,
-  system: AlertCircle,
   admin: AlertCircle,
 }
 
@@ -24,7 +23,6 @@ const typeColors: Record<string, string> = {
   assignment: '#F4B400',
   grade: '#0F9D58',
   event: '#DB4437',
-  system: '#9E9E9E',
   admin: '#AB47BC',
 }
 
@@ -39,7 +37,7 @@ export default function NoticeBoardPage() {
   const [formBody, setFormBody] = useState('')
   const [formType, setFormType] = useState('announcement')
 
-  const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
+  const canPost = user?.role === 'teacher' || user?.role === 'admin'
 
   useEffect(() => { loadNotices() }, [filter])
 
@@ -66,11 +64,11 @@ export default function NoticeBoardPage() {
   }
 
   const createNotice = async () => {
-    if (!formTitle || !formBody) return
+    if (!formTitle || !formBody) { toast.error('Fill in title and body'); return }
     try {
       await api.post('/notices/', { title: formTitle, body: formBody, notice_type: formType })
       toast.success('Notice posted')
-      setShowCreate(false); setFormTitle(''); setFormBody('')
+      setShowCreate(false); setFormTitle(''); setFormBody(''); setFormType('announcement')
       loadNotices()
     } catch { toast.error('Failed to post notice') }
   }
@@ -86,7 +84,7 @@ export default function NoticeBoardPage() {
           {unreadCount > 0 && (
             <button className="btn btn-ghost" onClick={markAllRead}>Mark all read</button>
           )}
-          {isTeacher && (
+          {canPost && (
             <button className="btn btn-primary" onClick={() => setShowCreate(true)}>Post Notice</button>
           )}
         </div>
@@ -94,7 +92,7 @@ export default function NoticeBoardPage() {
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
-        {['', 'announcement', 'assignment', 'grade', 'event', 'system'].map(f => (
+        {['', 'announcement', 'assignment', 'grade', 'event', 'admin'].map(f => (
           <button key={f} className={`badge ${filter === f ? 'badge-blue' : 'badge-gray'}`}
             style={{ cursor: 'pointer', padding: '5px 14px' }}
             onClick={() => setFilter(f)}>
@@ -143,6 +141,7 @@ export default function NoticeBoardPage() {
                   </div>
                   <p className="text-muted" style={{ marginTop: 2, fontSize: 13 }}>{notice.body}</p>
                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    {notice.author_name && <span className="badge badge-gray">By: {notice.author_name}</span>}
                     {notice.course_name && <span className="badge badge-gray">{notice.course_name}</span>}
                     <span className="badge badge-gray" style={{ textTransform: 'capitalize' }}>{notice.notice_type}</span>
                   </div>
@@ -174,8 +173,8 @@ export default function NoticeBoardPage() {
                 <label className="input-label">Type</label>
                 <select className="input" value={formType} onChange={e => setFormType(e.target.value)}>
                   <option value="announcement">Announcement</option>
+                  <option value="event">Event</option>
                   <option value="admin">Admin Notice</option>
-                  <option value="system">System</option>
                 </select>
               </div>
             </div>

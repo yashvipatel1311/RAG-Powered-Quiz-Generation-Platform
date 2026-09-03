@@ -223,9 +223,8 @@ async def approve_set(
     await notice_service.create_system_notice(
         title=f"Paper Style set {data.status}",
         body=f"A generated paper draft has been {data.status} by {current_user.full_name}",
-        notice_type="system",
+        notice_type="admin",
         posted_by=current_user.id,
-        target_roles=["admin", "teacher"],
     )
 
     return await _get_set_with_questions(set_id)

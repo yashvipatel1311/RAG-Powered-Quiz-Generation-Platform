@@ -115,6 +115,25 @@ async def list_sections(course_id: str) -> list[dict]:
 
 async def enroll_user(course_id: str, user_id: str, role: str, section_id: Optional[str] = None) -> dict:
     supabase = get_supabase_admin()
+    # Check for duplicate enrollment
+    try:
+        existing = (
+            supabase.table("enrollments")
+            .select("*")
+            .eq("course_id", course_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if existing.data and len(existing.data) > 0:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=409, detail="User is already enrolled in this course")
+    except Exception as e:
+        from fastapi import HTTPException
+        if isinstance(e, HTTPException):
+            raise e
+        # Ignore other errors
+
     result = supabase.table("enrollments").insert({
         "course_id": course_id,
         "user_id": user_id,

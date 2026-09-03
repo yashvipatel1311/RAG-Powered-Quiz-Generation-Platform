@@ -11,18 +11,16 @@ class NoticeCreate(BaseModel):
     course_id: Optional[str] = None  # None = institute-wide
     title: str
     body: str
-    notice_type: str = "announcement"  # announcement | assignment | grade | event | system | admin
-    target_roles: list[str] = ["admin", "teacher", "student"]
+    notice_type: str = "announcement"  # announcement | assignment | grade | event | admin
 
 
 class NoticeResponse(BaseModel):
     id: str
     course_id: Optional[str] = None
-    posted_by: str
+    author_id: Optional[str] = None
     title: str
     body: str
     notice_type: str
-    target_roles: list[str] = []
     created_at: Optional[datetime] = None
     is_read: bool = False
     # Joined

@@ -45,7 +45,6 @@ async def create_notice(
         body=data.body,
         notice_type=data.notice_type,
         course_id=data.course_id or None,
-        target_roles=data.target_roles,
     )
 
 

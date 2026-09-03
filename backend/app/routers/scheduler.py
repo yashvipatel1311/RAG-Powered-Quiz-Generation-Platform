@@ -34,9 +34,26 @@ async def list_events(
 @router.post("/events", response_model=EventResponse)
 async def create_event(
     data: EventCreate,
-    current_user: CurrentUser = Depends(require_role("admin", "teacher")),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Create a calendar event (teacher/admin only)."""
+    """
+    Create a calendar event.
+    - Admin/Teacher: can create any event type (lecture, exam, meeting, other)
+    - Student: can only create meeting and other
+    """
+    # Restrict students to meeting and other only
+    if current_user.role == "student" and data.event_type not in ("meeting", "other"):
+        raise HTTPException(
+            status_code=403,
+            detail="Students can only create meeting and other events."
+        )
+    # Holiday events are admin/teacher only
+    if data.event_type == "holiday" and current_user.role not in ("admin", "teacher"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin and teachers can create holiday events."
+        )
+
     result = await scheduler_service.create_event(
         created_by=current_user.id,
         title=data.title,
@@ -44,26 +61,22 @@ async def create_event(
         start_at=data.start_at.isoformat(),
         end_at=data.end_at.isoformat(),
         course_id=data.course_id or None,
-        section_id=data.section_id,
         description=data.description,
-        is_all_day=data.is_all_day,
-        is_recurring=data.is_recurring,
-        recurrence_rule=data.recurrence_rule,
         color=data.color,
         location=data.location,
-        reminder_minutes=data.reminder_minutes,
     )
 
-    # Notify enrolled students
-    if data.course_id:
+    # Notify everyone about the new event
+    try:
         await notice_service.create_system_notice(
             title=f"New event: {data.title}",
             body=f"{data.event_type.capitalize()} scheduled for {data.start_at.strftime('%b %d, %Y at %I:%M %p')}",
             notice_type="event",
-            course_id=data.course_id,
+            course_id=data.course_id or None,
             posted_by=current_user.id,
-            target_roles=["student"],
         )
+    except Exception:
+        pass  # Don't fail event creation if notice fails
 
     return result
 
@@ -90,16 +103,18 @@ async def update_event(
     )
 
     # Notify about changes
-    event = await scheduler_service.get_event(event_id)
-    if event and event.get("course_id"):
-        await notice_service.create_system_notice(
-            title=f"Event updated: {event['title']}",
-            body="An event on your calendar has been modified",
-            notice_type="event",
-            course_id=event["course_id"],
-            posted_by=current_user.id,
-            target_roles=["student"],
-        )
+    try:
+        event = await scheduler_service.get_event(event_id)
+        if event:
+            await notice_service.create_system_notice(
+                title=f"Event updated: {event['title']}",
+                body="An event on your calendar has been modified",
+                notice_type="event",
+                course_id=event.get("course_id"),
+                posted_by=current_user.id,
+            )
+    except Exception:
+        pass
 
     return result
 
@@ -110,16 +125,18 @@ async def delete_event(
     current_user: CurrentUser = Depends(require_role("admin", "teacher")),
 ):
     # Notify before deleting
-    event = await scheduler_service.get_event(event_id)
-    if event and event.get("course_id"):
-        await notice_service.create_system_notice(
-            title=f"Event cancelled: {event['title']}",
-            body="A scheduled event has been cancelled",
-            notice_type="event",
-            course_id=event["course_id"],
-            posted_by=current_user.id,
-            target_roles=["student"],
-        )
+    try:
+        event = await scheduler_service.get_event(event_id)
+        if event:
+            await notice_service.create_system_notice(
+                title=f"Event cancelled: {event['title']}",
+                body="A scheduled event has been cancelled",
+                notice_type="event",
+                course_id=event.get("course_id"),
+                posted_by=current_user.id,
+            )
+    except Exception:
+        pass
 
     await scheduler_service.delete_event(event_id)
     return {"message": "Event deleted"}

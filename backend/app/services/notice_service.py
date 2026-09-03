@@ -15,7 +15,6 @@ async def create_notice(
     body: str,
     notice_type: str = "announcement",
     course_id: Optional[str] = None,
-    target_roles: list[str] = ["admin", "teacher", "student"],
 ) -> dict:
     """Create a new notice."""
     supabase = get_supabase_admin()
@@ -38,23 +37,12 @@ async def list_notices(
     offset: int = 0,
 ) -> dict:
     """
-    List notices for a user based on their role and enrollments.
-    Returns notices + unread count.
+    List ALL notices for a user. Everyone sees all notices
+    so announcements and updates are visible across all accounts.
     """
     supabase = get_supabase_admin()
 
-    # Get user's enrolled courses
-    enrolled_courses = []
-    if role != "admin":
-        enrollments = (
-            supabase.table("enrollments")
-            .select("course_id")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        enrolled_courses = [e["course_id"] for e in (enrollments.data or [])]
-
-    # Build query
+    # Build query - show ALL notices to everyone
     query = (
         supabase.table("notices")
         .select("*, profiles(full_name, avatar_url), courses(name)")
@@ -62,16 +50,9 @@ async def list_notices(
 
     if course_id:
         query = query.eq("course_id", course_id)
-    elif role != "admin":
-        # Show institute-wide notices + notices for enrolled courses
-        query = query.or_(
-            f"course_id.is.null,course_id.in.({','.join(enrolled_courses)})"
-        ) if enrolled_courses else query.is_("course_id", "null")
 
     if notice_type:
         query = query.eq("notice_type", notice_type)
-
-    # Target roles filtering removed since it's not in schema
 
     result = (
         query
@@ -138,7 +119,6 @@ async def create_system_notice(
     notice_type: str,
     course_id: Optional[str] = None,
     posted_by: Optional[str] = None,
-    target_roles: list[str] = ["admin", "teacher", "student"],
 ):
     """
     Create a system-generated notice (triggered by events like assignment creation, grading, etc).
@@ -146,11 +126,8 @@ async def create_system_notice(
     """
     supabase = get_supabase_admin()
 
-    # Use a system user ID or the actor's ID
-    poster = posted_by or "system"
-
     supabase.table("notices").insert({
-        "author_id": poster if poster != "system" else None,
+        "author_id": posted_by if posted_by else None,
         "title": title,
         "body": body,
         "notice_type": notice_type,

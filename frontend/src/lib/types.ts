@@ -138,38 +138,35 @@ export interface StreamItem {
 }
 
 // ── Scheduler ─────────────────────────────────────────────────
-export type EventType = 'lecture' | 'meeting' | 'exam' | 'assignment_due' | 'other'
+export type EventType = 'lecture' | 'meeting' | 'exam' | 'assignment_due' | 'holiday' | 'other'
 
 export interface CalendarEvent {
   id: string
   course_id?: string
-  section_id?: string
-  created_by: string
+  creator_id?: string
   title: string
   description?: string
   event_type: EventType
   start_at: string
   end_at: string
-  is_all_day: boolean
-  is_recurring: boolean
   color: string
   location?: string
-  reminder_minutes: number
+  created_at?: string
   course_name?: string
   creator_name?: string
+  semester?: string
 }
 
 // ── Notice Board ──────────────────────────────────────────────
-export type NoticeType = 'announcement' | 'assignment' | 'grade' | 'event' | 'system' | 'admin'
+export type NoticeType = 'announcement' | 'assignment' | 'grade' | 'event' | 'admin'
 
 export interface Notice {
   id: string
   course_id?: string
-  posted_by: string
+  author_id?: string
   title: string
   body: string
   notice_type: NoticeType
-  target_roles: string[]
   created_at: string
   is_read: boolean
   author_name?: string

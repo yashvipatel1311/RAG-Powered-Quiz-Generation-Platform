@@ -7,11 +7,27 @@ Admin endpoints for user management.
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 
-from app.dependencies import require_role, CurrentUser
+from app.dependencies import get_current_user, require_role, CurrentUser
 from app.database import get_supabase_admin
 from app.models.user import UserResponse, UserRoleUpdate
 
 router = APIRouter()
+
+
+@router.get("/staff", response_model=list[UserResponse])
+async def list_staff(
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """List all teachers and admins (for meeting invitations). Any authenticated user can access."""
+    supabase = get_supabase_admin()
+    result = (
+        supabase.table("profiles")
+        .select("*")
+        .in_("role", ["admin", "teacher"])
+        .order("full_name")
+        .execute()
+    )
+    return result.data or []
 
 
 @router.get("/", response_model=list[UserResponse])

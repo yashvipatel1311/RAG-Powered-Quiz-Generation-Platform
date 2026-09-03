@@ -7,7 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import api from '@/lib/api'
 import type { Course, StreamItem, Material, Assignment, Enrollment } from '@/lib/types'
-import { ArrowLeft, Upload, Plus, FileText, ClipboardList, Users, Clock } from 'lucide-react'
+import { ArrowLeft, Upload, Plus, FileText, ClipboardList, Users, Clock, Download } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
 
@@ -110,6 +110,20 @@ export default function CoursePage() {
       const m = await api.get(`/classroom/${courseId}/materials`)
       setMaterials(m.data || [])
     } catch { toast.error('Upload failed') }
+  }
+
+  const downloadMaterial = async (materialId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      const { data } = await api.get(`/classroom/${courseId}/materials/${materialId}/download`)
+      if (data.download_url) {
+        window.open(data.download_url, '_blank')
+      } else {
+        toast.error(data.error || 'Download not available')
+      }
+    } catch {
+      toast.error('Failed to get download link')
+    }
   }
 
   const isTeacher = user?.role === 'teacher' || user?.role === 'admin'
@@ -256,11 +270,16 @@ export default function CoursePage() {
                     <div className="text-muted text-small">{m.file_name}</div>
                   </div>
                 </div>
-                {m.ingestion_status && (
-                  <span className={`badge ${m.ingestion_status === 'indexed' ? 'badge-green' : m.ingestion_status === 'failed' ? 'badge-red' : 'badge-yellow'}`}>
-                    {m.ingestion_status}
-                  </span>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  {m.ingestion_status && (
+                    <span className={`badge ${m.ingestion_status === 'indexed' ? 'badge-green' : m.ingestion_status === 'failed' ? 'badge-red' : 'badge-yellow'}`}>
+                      {m.ingestion_status}
+                    </span>
+                  )}
+                  <button className="btn btn-ghost btn-icon" onClick={(e) => downloadMaterial(m.id, e)} title="Download">
+                    <Download size={18} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -270,7 +289,7 @@ export default function CoursePage() {
       {/* People Tab */}
       {tab === 'people' && (
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          <h3 style={{ marginBottom: 12 }}>Teachers</h3>
+          <h3 style={{ marginBottom: 12 }}>Teachers ({people.filter(p => p.role === 'teacher').length})</h3>
           {people.filter(p => p.role === 'teacher').map(p => (
             <div key={p.id} style={{
               display: 'flex', alignItems: 'center', gap: 12,

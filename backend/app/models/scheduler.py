@@ -9,23 +9,20 @@ from datetime import datetime
 
 class EventCreate(BaseModel):
     course_id: Optional[str] = None
-    section_id: Optional[str] = None
     title: str
     description: Optional[str] = None
-    event_type: str  # 'lecture' | 'meeting' | 'exam' | 'assignment_due' | 'other'
+    event_type: str  # 'lecture' | 'meeting' | 'exam' | 'holiday' | 'other'
     start_at: datetime
     end_at: datetime
-    is_all_day: bool = False
-    is_recurring: bool = False
-    recurrence_rule: Optional[dict] = None
     color: Optional[str] = None
     location: Optional[str] = None
-    reminder_minutes: int = 30
+    invitee_id: Optional[str] = None  # For meetings: the person you're meeting
+    semester: Optional[str] = None  # For holidays: 'everyone' or '1'-'10'
 
     @field_validator("event_type")
     @classmethod
     def validate_event_type(cls, v):
-        allowed = {"lecture", "meeting", "exam", "assignment_due", "other"}
+        allowed = {"lecture", "meeting", "exam", "assignment_due", "holiday", "other"}
         if v not in allowed:
             raise ValueError(f"event_type must be one of: {allowed}")
         return v
@@ -44,28 +41,21 @@ class EventUpdate(BaseModel):
     event_type: Optional[str] = None
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
-    is_all_day: Optional[bool] = None
     color: Optional[str] = None
     location: Optional[str] = None
-    reminder_minutes: Optional[int] = None
 
 
 class EventResponse(BaseModel):
     id: str
     course_id: Optional[str] = None
-    section_id: Optional[str] = None
-    created_by: str
+    creator_id: Optional[str] = None
     title: str
     description: Optional[str] = None
     event_type: str
     start_at: datetime
     end_at: datetime
-    is_all_day: bool = False
-    is_recurring: bool = False
-    recurrence_rule: Optional[dict] = None
     color: str = "#4285F4"
     location: Optional[str] = None
-    reminder_minutes: int = 30
     created_at: Optional[datetime] = None
     # Joined
     course_name: Optional[str] = None
@@ -79,11 +69,12 @@ class ConflictWarning(BaseModel):
     message: Optional[str] = None
 
 
-# Default colors for event types (used by frontend too)
+# Default colors for event types
 EVENT_TYPE_COLORS = {
-    "lecture": "#4285F4",      # Google Blue
-    "meeting": "#0F9D58",      # Google Green
-    "exam": "#DB4437",         # Google Red
-    "assignment_due": "#F4B400", # Google Yellow
+    "lecture": "#FBC02D",       # Yellow
+    "meeting": "#4285F4",      # Blue
+    "exam": "#DB4437",         # Red
+    "assignment_due": "#F4B400", # Yellow/Orange
+    "holiday": "#0F9D58",      # Green
     "other": "#9E9E9E",        # Grey
 }

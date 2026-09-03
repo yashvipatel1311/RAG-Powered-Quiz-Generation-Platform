@@ -87,7 +87,7 @@ class BulkEnrollmentCreate(BaseModel):
 
 
 class EnrollmentResponse(BaseModel):
-    id: str
+    id: Optional[str] = None
     course_id: str
     user_id: str
     role: str

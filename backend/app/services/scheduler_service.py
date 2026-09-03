@@ -18,14 +18,9 @@ async def create_event(
     start_at: str,
     end_at: str,
     course_id: Optional[str] = None,
-    section_id: Optional[str] = None,
     description: Optional[str] = None,
-    is_all_day: bool = False,
-    is_recurring: bool = False,
-    recurrence_rule: Optional[dict] = None,
     color: Optional[str] = None,
     location: Optional[str] = None,
-    reminder_minutes: int = 30,
 ) -> dict:
     """Create a new calendar event."""
     supabase = get_supabase_admin()
@@ -56,43 +51,19 @@ async def list_events(
     course_id: Optional[str] = None,
 ) -> list[dict]:
     """
-    List events for a user.
-    - Students see events for their enrolled courses
-    - Teachers see events they created or for their courses
-    - Admins see all events
+    List ALL events for a user. Everyone sees all events so that
+    schedules, exams, lectures, and meetings are visible across accounts.
     """
     supabase = get_supabase_admin()
 
-    if role == "admin":
-        query = supabase.table("calendar_events").select("*, courses(name), profiles(full_name)")
-    else:
-        # Get user's enrolled courses
-        enrollments = (
-            supabase.table("enrollments")
-            .select("course_id")
-            .eq("user_id", user_id)
-            .execute()
-        )
-        course_ids = [e["course_id"] for e in (enrollments.data or [])]
-
-        if course_id:
-            course_ids = [course_id] if course_id in course_ids else []
-
-        if not course_ids:
-            return []
-
-        query = (
-            supabase.table("calendar_events")
-            .select("*, courses(name), profiles(full_name)")
-            .in_("course_id", course_ids)
-        )
+    query = supabase.table("calendar_events").select("*, courses(name), profiles(full_name)")
 
     # Apply date filters
     if start_date:
         query = query.gte("start_at", start_date)
     if end_date:
         query = query.lte("end_at", end_date)
-    if course_id and role == "admin":
+    if course_id:
         query = query.eq("course_id", course_id)
 
     result = query.order("start_at").execute()
@@ -149,7 +120,7 @@ async def check_conflicts(
 ) -> list[dict]:
     """
     Check for scheduling conflicts for a given time range.
-    Returns any overlapping events for the same course/section.
+    Returns any overlapping events for the same course.
     """
     supabase = get_supabase_admin()
 
@@ -160,8 +131,6 @@ async def check_conflicts(
         .lt("start_at", end_at)
         .gt("end_at", start_at)
     )
-
-    # section_id filtering removed since it's not in schema
 
     if exclude_event_id:
         query = query.neq("id", exclude_event_id)

@@ -1,11 +1,11 @@
 // ============================================================
 // Academix AI — Manage Courses Page (Admin)
-// Course CRUD, sections, enrollments
+// Course CRUD, enrollment, View Details modal
 // ============================================================
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
-import type { Course, User } from '@/lib/types'
-import { Plus, Users, BookOpen, Settings } from 'lucide-react'
+import type { Course, User, Enrollment } from '@/lib/types'
+import { Plus, Users, BookOpen, Eye, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function ManageCoursesPage() {
@@ -13,7 +13,9 @@ export default function ManageCoursesPage() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [showEnroll, setShowEnroll] = useState<string | null>(null)
+  const [showDetails, setShowDetails] = useState<string | null>(null)
   const [allUsers, setAllUsers] = useState<User[]>([])
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([])
 
   const [formName, setFormName] = useState('')
   const [formCode, setFormCode] = useState('')
@@ -35,6 +37,13 @@ export default function ManageCoursesPage() {
       setCourses(data || [])
     } catch { /* ignore */ }
     setLoading(false)
+  }
+
+  const loadEnrollments = async (courseId: string) => {
+    try {
+      const { data } = await api.get(`/courses/${courseId}/enrollments`)
+      setEnrollments(data || [])
+    } catch { setEnrollments([]) }
   }
 
   const createCourse = async () => {
@@ -61,12 +70,24 @@ export default function ManageCoursesPage() {
         course_id: showEnroll, user_id: enrollUserId, role: enrollRole,
       })
       toast.success('User enrolled')
-      setShowEnroll(null); setEnrollUserId(''); setEnrollRole('student')
+      setEnrollUserId(''); setEnrollRole('student')
       loadCourses()
+      // Reload details if open
+      if (showDetails === showEnroll) loadEnrollments(showEnroll)
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to enroll')
+      const msg = err.response?.data?.detail || 'Failed to enroll'
+      toast.error(msg)
     }
   }
+
+  const openDetails = async (courseId: string) => {
+    setShowDetails(courseId)
+    await loadEnrollments(courseId)
+  }
+
+  const detailCourse = courses.find(c => c.id === showDetails)
+  const enrolledTeachers = enrollments.filter(e => e.role === 'teacher')
+  const enrolledStudents = enrollments.filter(e => e.role === 'student')
 
   return (
     <div>
@@ -105,13 +126,92 @@ export default function ManageCoursesPage() {
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}
-                    onClick={() => setShowEnroll(course.id)}>
+                    onClick={() => openDetails(course.id)}>
+                    <Eye size={14} /> View Details
+                  </button>
+                  <button className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }}
+                    onClick={() => { setShowEnroll(course.id); setEnrollUserId(''); setEnrollRole('student') }}>
                     <Users size={14} /> Enroll
                   </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* View Details Modal */}
+      {showDetails && detailCourse && (
+        <div className="modal-overlay" onClick={() => setShowDetails(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <div>
+                <h3>{detailCourse.name}</h3>
+                <span className="text-muted text-small">{detailCourse.code}{detailCourse.semester ? ` · Semester ${detailCourse.semester}` : ''}</span>
+              </div>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowDetails(null)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: 400, overflowY: 'auto' }}>
+              {/* Teachers Section */}
+              <h4 style={{ marginBottom: 8 }}>
+                Teachers ({enrolledTeachers.length})
+              </h4>
+              {enrolledTeachers.length === 0 ? (
+                <p className="text-muted text-small" style={{ marginBottom: 16 }}>No teachers enrolled</p>
+              ) : (
+                <div style={{ marginBottom: 16 }}>
+                  {enrolledTeachers.map(e => (
+                    <div key={e.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 0', borderBottom: '1px solid var(--color-border)',
+                    }}>
+                      <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+                        {e.user_name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <div className="font-medium" style={{ fontSize: 14 }}>{e.user_name}</div>
+                        <div className="text-muted text-small">{e.user_email}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Students Section */}
+              <h4 style={{ marginBottom: 8 }}>
+                Students ({enrolledStudents.length})
+              </h4>
+              {enrolledStudents.length === 0 ? (
+                <p className="text-muted text-small">No students enrolled</p>
+              ) : (
+                <div>
+                  {enrolledStudents.map(e => (
+                    <div key={e.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '8px 0', borderBottom: '1px solid var(--color-border)',
+                    }}>
+                      <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>
+                        {e.user_name?.charAt(0) || '?'}
+                      </div>
+                      <div>
+                        <div className="font-medium" style={{ fontSize: 14 }}>{e.user_name}</div>
+                        <div className="text-muted text-small">{e.user_email}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowDetails(null)}>Close</button>
+              <button className="btn btn-primary" onClick={() => {
+                setShowEnroll(showDetails)
+                setShowDetails(null)
+              }}>Enroll User</button>
+            </div>
+          </div>
         </div>
       )}
 
